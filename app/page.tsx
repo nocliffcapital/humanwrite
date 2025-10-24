@@ -217,11 +217,18 @@ export default function Home() {
       
       // Update proxy info with final implementation address
       if (implementationAddress) {
-        setProxyInfo({
-          isProxy: true,
-          implementation: implementationAddress,
-          proxyType: proxy.proxyType,
-        });
+        try {
+          // Validate and normalize address to proper Address type (0x${string})
+          const normalizedImpl = getAddress(implementationAddress);
+          setProxyInfo({
+            isProxy: true,
+            implementation: normalizedImpl,
+            proxyType: proxy.proxyType,
+          });
+        } catch {
+          // If address validation fails, just use proxy info as-is
+          setProxyInfo(proxy);
+        }
       } else {
         setProxyInfo(proxy);
       }
