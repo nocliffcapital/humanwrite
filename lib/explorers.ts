@@ -212,14 +212,56 @@ async function fetchFromEtherscan(
   }
 }
 
-// Fetch implementation ABI if proxy
+// Fetch implementation ABI if proxy (try direct ABI endpoint first)
 export async function fetchImplementationAbi(
   implementationAddress: string,
   chainId: number
 ): Promise<Abi | null> {
   try {
     console.log(`Fetching implementation contract ABI at ${implementationAddress}`);
+    
+    const chain = getChainById(chainId);
+    if (!chain) {
+      throw new Error(`Unsupported chain ID: ${chainId}`);
+    }
+    
+    // Try direct ABI fetch using getabi action (might bypass proxy auto-resolution)
+    const userKey = getUserApiKey();
+    const apiKey = userKey || getExplorerApiKey(chainId);
+    
+    const abiParams = new URLSearchParams({
+      chainid: chainId.toString(),
+      module: 'contract',
+      action: 'getabi',
+      address: implementationAddress.toLowerCase(),
+    });
+    
+    if (apiKey) {
+      abiParams.append('apikey', apiKey);
+    }
+    
+    const abiUrl = `${chain.explorerApiUrl}?${abiParams.toString()}`;
+    const proxyUrl = `/api/fetch-abi?url=${encodeURIComponent(abiUrl)}`;
+    
+    const response = await fetch(proxyUrl);
+    const data = await response.json();
+    
+    if (response.ok && data.status === '1' && data.result) {
+      // getabi returns ABI as a JSON string
+      const abi: Abi = JSON.parse(data.result);
+      console.log(`Successfully fetched implementation ABI with ${abi.length} items via getabi action`);
+      return abi;
+    }
+    
+    // Fallback to getsourcecode if getabi doesn't work
+    console.log('getabi failed, trying getsourcecode for implementation');
     const metadata = await fetchAbi(implementationAddress, chainId);
+    
+    // Check if we got proxy data back (indicates API auto-resolution issue)
+    if (metadata.isProxy) {
+      console.warn('⚠️ Implementation address returned proxy data - this is an Etherscan API issue');
+    }
+    
     console.log(`Successfully fetched implementation ABI with ${metadata.abi.length} items`);
     return metadata.abi;
   } catch (error) {
