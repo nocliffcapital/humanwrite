@@ -242,15 +242,33 @@ export async function fetchImplementationAbi(
     });
     
     if (response.ok && data.status === '1' && data.result) {
-      // getabi should return ABI as a JSON string
+      // getabi should return ABI as a JSON string, but sometimes returns getsourcecode format
       let abi: Abi;
       
       if (typeof data.result === 'string') {
+        // Standard format: ABI as JSON string
         abi = JSON.parse(data.result);
-        console.log(`Successfully parsed implementation ABI with ${abi.length} items via getabi`);
+        console.log(`Successfully parsed implementation ABI with ${abi.length} items via getabi (string format)`);
+        return abi;
+      } else if (Array.isArray(data.result) && data.result[0]?.ABI) {
+        // Some API versions return getsourcecode format
+        const contractData = data.result[0];
+        console.log(`getabi returned getsourcecode format. Contract: ${contractData.ContractName}, Proxy: ${contractData.Proxy}`);
+        
+        // Check if we got proxy data back (API auto-resolution bug)
+        if (contractData.Proxy === '1' || contractData.ContractName === 'FiatTokenProxy') {
+          console.error(`❌ getabi returned PROXY data instead of implementation! ContractName: ${contractData.ContractName}`);
+          // This is the Etherscan bug - it's returning proxy data for implementation address
+          // We can't use this, return null
+          return null;
+        }
+        
+        // Extract ABI from the object
+        abi = JSON.parse(contractData.ABI);
+        console.log(`Successfully parsed implementation ABI with ${abi.length} items via getabi (object format)`);
         return abi;
       } else {
-        console.error('getabi returned non-string result:', data.result);
+        console.error('getabi returned unexpected format:', data.result);
         throw new Error('getabi returned unexpected format');
       }
     }
