@@ -215,18 +215,31 @@ export const getApiKeyEnvName = (chainId: number): string => {
 };
 
 export const getExplorerApiKey = (chainId: number): string => {
-  const keyMap: Record<number, string> = {
-    [mainnet.id]: getApiKey('ETHERSCAN_KEY'),
-    [base.id]: getApiKey('BASESCAN_KEY'),
-    [arbitrum.id]: getApiKey('ARBISCAN_KEY'),
-    [optimism.id]: getApiKey('OPTIMISTIC_ETHERSCAN_KEY'),
-    [polygon.id]: getApiKey('POLYGONSCAN_KEY'),
-    [bsc.id]: getApiKey('BSCSCAN_KEY'),
-    [avalanche.id]: getApiKey('SNOWTRACE_KEY'),
-    [sepolia.id]: getApiKey('ETHERSCAN_KEY'),
-    [avalancheFuji.id]: getApiKey('SNOWTRACE_KEY'),
+  // Avalanche uses a different API system (SnowTrace)
+  if (chainId === avalanche.id || chainId === avalancheFuji.id) {
+    return getApiKey('SNOWTRACE_KEY');
+  }
+  
+  // All Etherscan-family explorers use the same API key
+  // Try chain-specific key first, then fall back to ETHERSCAN_KEY
+  const chainSpecificKeys: Record<number, string> = {
+    [mainnet.id]: 'ETHERSCAN_KEY',
+    [base.id]: 'BASESCAN_KEY',
+    [arbitrum.id]: 'ARBISCAN_KEY',
+    [optimism.id]: 'OPTIMISTIC_ETHERSCAN_KEY',
+    [polygon.id]: 'POLYGONSCAN_KEY',
+    [bsc.id]: 'BSCSCAN_KEY',
+    [sepolia.id]: 'ETHERSCAN_KEY',
   };
-  return keyMap[chainId] || '';
+  
+  const specificKey = chainSpecificKeys[chainId];
+  if (specificKey) {
+    const key = getApiKey(specificKey);
+    // If chain-specific key not found, fall back to ETHERSCAN_KEY
+    return key || getApiKey('ETHERSCAN_KEY');
+  }
+  
+  return getApiKey('ETHERSCAN_KEY');
 };
 
 export const getChainById = (chainId: number): ChainConfig | undefined => {
