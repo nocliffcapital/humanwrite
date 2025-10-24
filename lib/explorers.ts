@@ -240,13 +240,29 @@ export async function fetchImplementationAbi(
     });
     
     if (response.ok && data.status === '1' && data.result) {
-      // getabi returns ABI as a JSON string (or sometimes already parsed)
+      // v2 API getabi returns full getsourcecode format (array with object containing ABI)
       let abi: Abi;
+      
       if (typeof data.result === 'string') {
+        // Direct ABI string
         abi = JSON.parse(data.result);
+      } else if (Array.isArray(data.result) && data.result[0]?.ABI) {
+        // v2 API format: array with full contract data object
+        const contractData = data.result[0];
+        console.log(`getabi returned getsourcecode format for contract: ${contractData.ContractName}`);
+        
+        // Check if we got the wrong contract (proxy auto-resolution issue)
+        if (contractData.ContractName === 'FiatTokenProxy') {
+          console.warn('⚠️ getabi returned proxy data instead of implementation - falling back to getsourcecode');
+          throw new Error('getabi returned proxy data');
+        }
+        
+        abi = JSON.parse(contractData.ABI);
       } else {
+        // Direct array of ABI items
         abi = data.result;
       }
+      
       console.log(`Successfully fetched implementation ABI with ${abi.length} items via getabi action`);
       return abi;
     }
