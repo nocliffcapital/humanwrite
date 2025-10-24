@@ -158,12 +158,27 @@ async function fetchFromEtherscan(
       isProxy,
     };
 
+    // Count function types for debugging
+    const functionCounts = {
+      total: abi.length,
+      functions: abi.filter((i: any) => i.type === 'function').length,
+      writeFunctions: abi.filter((i: any) => 
+        i.type === 'function' && 
+        (i.stateMutability === 'nonpayable' || i.stateMutability === 'payable')
+      ).length,
+      readFunctions: abi.filter((i: any) => 
+        i.type === 'function' && 
+        (i.stateMutability === 'view' || i.stateMutability === 'pure')
+      ).length,
+      events: abi.filter((i: any) => i.type === 'event').length,
+    };
+
     console.log('Successfully fetched from Etherscan:', {
       contractName: sourceData.ContractName,
       isProxy,
       proxyFlag: sourceData.Proxy,
       implementation: sourceData.Implementation,
-      abiItemCount: abi.length,
+      functionCounts,
     });
     return metadata;
   } catch (error) {
