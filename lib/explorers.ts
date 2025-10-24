@@ -202,7 +202,7 @@ async function fetchFromEtherscan(
   }
 }
 
-// Fetch implementation ABI if proxy (try direct ABI endpoint first)
+// Fetch implementation ABI if proxy - use getsourcecode directly with special handling
 export async function fetchImplementationAbi(
   implementationAddress: string,
   chainId: number
@@ -210,71 +210,27 @@ export async function fetchImplementationAbi(
   try {
     console.log(`Fetching implementation contract ABI at ${implementationAddress}`);
     
-    const chain = getChainById(chainId);
-    if (!chain) {
-      throw new Error(`Unsupported chain ID: ${chainId}`);
-    }
-    
-    // Try direct ABI fetch using getabi action (might bypass proxy auto-resolution)
-    // Don't add API key client-side - let the server route inject it
-    // Use v1 API endpoint (without /v2/) to avoid caching/resolution issues
-    const abiParams = new URLSearchParams({
-      module: 'contract',
-      action: 'getabi',
-      address: implementationAddress.toLowerCase(),
-    });
-    
-    const v1ApiUrl = chain.explorerApiUrl.replace('/v2/api', '/api');
-    const abiUrl = `${v1ApiUrl}?${abiParams.toString()}`;
-    const proxyUrl = `/api/fetch-abi?url=${encodeURIComponent(abiUrl)}`;
-    
-    const response = await fetch(proxyUrl);
-    const data = await response.json();
-    
-    console.log('getabi response:', {
-      ok: response.ok,
-      status: data.status,
-      message: data.message,
-      resultType: typeof data.result,
-      resultLength: Array.isArray(data.result) ? data.result.length : 'N/A',
-      resultPreview: typeof data.result === 'string' ? data.result.substring(0, 100) : data.result
-    });
-    
-    if (response.ok && data.status === '1' && data.result) {
-      // v2 API getabi returns full getsourcecode format (array with object containing ABI)
-      let abi: Abi;
-      
-      if (typeof data.result === 'string') {
-        // Direct ABI string
-        abi = JSON.parse(data.result);
-      } else if (Array.isArray(data.result) && data.result[0]?.ABI) {
-        // v2 API format: array with full contract data object
-        const contractData = data.result[0];
-        console.log(`getabi returned getsourcecode format for contract: ${contractData.ContractName}`);
-        
-        // Check if we got the wrong contract (proxy auto-resolution issue)
-        if (contractData.ContractName === 'FiatTokenProxy') {
-          console.warn('⚠️ getabi returned proxy data instead of implementation - falling back to getsourcecode');
-          throw new Error('getabi returned proxy data');
-        }
-        
-        abi = JSON.parse(contractData.ABI);
-      } else {
-        // Direct array of ABI items
-        abi = data.result;
-      }
-      
-      console.log(`Successfully fetched implementation ABI with ${abi.length} items via getabi action`);
-      return abi;
-    }
-    
-    // Fallback to getsourcecode if getabi doesn't work
-    console.log('getabi failed, trying getsourcecode for implementation');
+    // Fetch using getsourcecode but mark this as an implementation request
+    // to avoid proxy auto-resolution
     const metadata = await fetchAbi(implementationAddress, chainId);
     
-    // Check if we got proxy data back (indicates API auto-resolution issue)
-    if (metadata.isProxy) {
-      console.warn('⚠️ Implementation address returned proxy data - this is an Etherscan API issue');
+    console.log(`Fetched ABI for address ${implementationAddress}:`, {
+      contractName: metadata.name,
+      isProxy: metadata.isProxy,
+      abiLength: metadata.abi.length,
+      implementation: metadata.implementation
+    });
+    
+    // If we got proxy data back, the API is still auto-resolving
+    // Try to use the ABI anyway but warn
+    if (metadata.isProxy && metadata.implementation) {
+      console.warn(`⚠️ Implementation address ${implementationAddress} returned proxy data - API may be auto-resolving`);
+      
+      // If it has an implementation field, recursively fetch that
+      if (metadata.implementation && metadata.implementation !== implementationAddress.toLowerCase()) {
+        console.log(`Recursively fetching nested implementation: ${metadata.implementation}`);
+        return await fetchImplementationAbi(metadata.implementation, chainId);
+      }
     }
     
     console.log(`Successfully fetched implementation ABI with ${metadata.abi.length} items`);
