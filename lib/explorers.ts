@@ -202,7 +202,7 @@ async function fetchFromEtherscan(
   }
 }
 
-// Fetch implementation ABI if proxy - use getabi with v2 API and chainid
+// Fetch implementation ABI if proxy - try Blockscout first (no API key, no bugs!)
 export async function fetchImplementationAbi(
   implementationAddress: string,
   chainId: number
@@ -215,8 +215,45 @@ export async function fetchImplementationAbi(
       throw new Error(`Unsupported chain ID: ${chainId}`);
     }
     
-    // Use getabi action (NOT getsourcecode) to bypass proxy auto-resolution
-    // Keep chainid parameter and use v2 API - let server inject API key
+    // STRATEGY 1: Try Blockscout first (free, no API key, more reliable)
+    const blockscoutUrls: Record<number, string> = {
+      1: 'https://eth.blockscout.com/api',           // Ethereum
+      8453: 'https://base.blockscout.com/api',       // Base
+      10: 'https://optimism.blockscout.com/api',     // Optimism
+      42161: 'https://arbitrum.blockscout.com/api',  // Arbitrum
+      137: 'https://polygon.blockscout.com/api',     // Polygon
+    };
+    
+    const blockscoutUrl = blockscoutUrls[chainId];
+    if (blockscoutUrl) {
+      try {
+        console.log('Trying Blockscout for implementation ABI...');
+        const blockscoutParams = new URLSearchParams({
+          module: 'contract',
+          action: 'getabi',
+          address: implementationAddress.toLowerCase(),
+        });
+        
+        const fullUrl = `${blockscoutUrl}?${blockscoutParams.toString()}`;
+        const blockscoutProxy = `/api/fetch-abi?url=${encodeURIComponent(fullUrl)}`;
+        
+        const blockscoutResponse = await fetch(blockscoutProxy);
+        const blockscoutData = await blockscoutResponse.json();
+        
+        if (blockscoutResponse.ok && blockscoutData.status === '1' && blockscoutData.result) {
+          if (typeof blockscoutData.result === 'string') {
+            const abi: Abi = JSON.parse(blockscoutData.result);
+            console.log(`✅ Successfully fetched ${abi.length} items from Blockscout`);
+            return abi;
+          }
+        }
+        console.log('Blockscout failed, falling back to Etherscan');
+      } catch (blockscoutError) {
+        console.log('Blockscout error, falling back to Etherscan:', blockscoutError);
+      }
+    }
+    
+    // STRATEGY 2: Fall back to Etherscan
     const abiParams = new URLSearchParams({
       chainid: chainId.toString(),
       module: 'contract',
@@ -227,7 +264,7 @@ export async function fetchImplementationAbi(
     const abiUrl = `${chain.explorerApiUrl}?${abiParams.toString()}`;
     const proxyUrl = `/api/fetch-abi?url=${encodeURIComponent(abiUrl)}`;
     
-    console.log(`Requesting getabi for implementation via: ${proxyUrl}`);
+    console.log(`Requesting getabi for implementation via Etherscan`);
     
     const response = await fetch(proxyUrl);
     const data = await response.json();
