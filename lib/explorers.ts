@@ -24,7 +24,7 @@ function getUserApiKey(): string | null {
   return localStorage.getItem('etherscan_api_key');
 }
 
-// Fetch ABI with smart fallback: Sourcify first (free!), then Etherscan
+// Fetch ABI from Etherscan (Sourcify removed due to CORS issues)
 export async function fetchAbi(
   address: string,
   chainId: number
@@ -34,18 +34,8 @@ export async function fetchAbi(
     throw new Error(`Unsupported chain ID: ${chainId}`);
   }
 
-  // STRATEGY 1: Try Sourcify first (free, no API key required!)
-  try {
-    console.log('Trying Sourcify (free, no API key needed)...');
-    const metadata = await fetchFromSourcify(address, chainId);
-    console.log('Successfully fetched from Sourcify');
-    return metadata;
-  } catch (sourcifyError) {
-    console.log('Sourcify failed, trying Etherscan...', sourcifyError);
-    
-    // STRATEGY 2: Fall back to Etherscan with API key
-    return await fetchFromEtherscan(address, chainId, chain);
-  }
+  // Fetch directly from Etherscan
+  return await fetchFromEtherscan(address, chainId, chain);
 }
 
 // Helper: Fetch from Etherscan-style explorers
@@ -247,8 +237,13 @@ export async function fetchImplementationAbi(
     const data = await response.json();
     
     if (response.ok && data.status === '1' && data.result) {
-      // getabi returns ABI as a JSON string
-      const abi: Abi = JSON.parse(data.result);
+      // getabi returns ABI as a JSON string (or sometimes already parsed)
+      let abi: Abi;
+      if (typeof data.result === 'string') {
+        abi = JSON.parse(data.result);
+      } else {
+        abi = data.result;
+      }
       console.log(`Successfully fetched implementation ABI with ${abi.length} items via getabi action`);
       return abi;
     }
