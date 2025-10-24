@@ -217,14 +217,15 @@ export async function fetchImplementationAbi(
     
     // Try direct ABI fetch using getabi action (might bypass proxy auto-resolution)
     // Don't add API key client-side - let the server route inject it
+    // Use v1 API endpoint (without /v2/) to avoid caching/resolution issues
     const abiParams = new URLSearchParams({
-      chainid: chainId.toString(),
       module: 'contract',
       action: 'getabi',
       address: implementationAddress.toLowerCase(),
     });
     
-    const abiUrl = `${chain.explorerApiUrl}?${abiParams.toString()}`;
+    const v1ApiUrl = chain.explorerApiUrl.replace('/v2/api', '/api');
+    const abiUrl = `${v1ApiUrl}?${abiParams.toString()}`;
     const proxyUrl = `/api/fetch-abi?url=${encodeURIComponent(abiUrl)}`;
     
     const response = await fetch(proxyUrl);

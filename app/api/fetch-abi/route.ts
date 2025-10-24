@@ -17,18 +17,34 @@ export async function GET(request: NextRequest) {
     const urlObj = new URL(url);
     const chainIdParam = urlObj.searchParams.get('chainid');
     
+    // Determine chain ID from URL or default to Ethereum mainnet
+    let chainId = 1; // Default to Ethereum
     if (chainIdParam) {
-      const chainId = parseInt(chainIdParam, 10);
-      
-      // Get API key server-side (secure!)
-      const apiKey = getExplorerApiKey(chainId);
-      
-      if (apiKey && !urlObj.searchParams.has('apikey')) {
-        // Inject API key server-side
-        urlObj.searchParams.set('apikey', apiKey);
-        url = urlObj.toString();
-        console.log(`[API Route] Injected server-side API key for chain ${chainId}`);
-      }
+      chainId = parseInt(chainIdParam, 10);
+    } else if (url.includes('etherscan.io')) {
+      chainId = 1;
+    } else if (url.includes('basescan.org')) {
+      chainId = 8453;
+    } else if (url.includes('arbiscan.io')) {
+      chainId = 42161;
+    } else if (url.includes('optimistic.etherscan.io')) {
+      chainId = 10;
+    } else if (url.includes('polygonscan.com')) {
+      chainId = 137;
+    } else if (url.includes('bscscan.com')) {
+      chainId = 56;
+    } else if (url.includes('snowtrace.io')) {
+      chainId = 43114;
+    }
+    
+    // Get API key server-side (secure!)
+    const apiKey = getExplorerApiKey(chainId);
+    
+    if (apiKey && !urlObj.searchParams.has('apikey')) {
+      // Inject API key server-side
+      urlObj.searchParams.set('apikey', apiKey);
+      url = urlObj.toString();
+      console.log(`[API Route] Injected server-side API key for chain ${chainId}`);
     }
 
     // Fetch from the explorer API server-side (no CORS issues)
