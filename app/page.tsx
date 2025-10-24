@@ -161,22 +161,69 @@ export default function Home() {
       
       // Detect proxy
       const proxy = await detectProxyFull(publicClient, address);
-      setProxyInfo(proxy);
-
-      // If proxy detected, ALWAYS use implementation ABI (this is where the real functions are!)
+      
+      // Determine implementation address from multiple sources
       const implementationAddress = proxy.implementation || contractMetadata.implementation;
-      if (proxy.isProxy && implementationAddress) {
+      
+      console.log('Proxy detection:', {
+        isProxy: proxy.isProxy || contractMetadata.isProxy,
+        proxyType: proxy.proxyType,
+        implementationFromStorage: proxy.implementation,
+        implementationFromExplorer: contractMetadata.implementation,
+        finalImplementation: implementationAddress,
+      });
+
+      // If proxy detected, MERGE implementation ABI with proxy ABI (show all functions!)
+      if ((proxy.isProxy || contractMetadata.isProxy) && implementationAddress) {
         try {
-          console.log(`Proxy detected - fetching implementation ABI from ${implementationAddress}`);
+          console.log(`🔍 Proxy detected (${proxy.proxyType || 'via Explorer'}) - fetching implementation ABI from ${implementationAddress}`);
           const implAbi = await fetchImplementationAbi(implementationAddress, selectedChainId);
           if (implAbi) {
-            // Replace proxy ABI with implementation ABI (this has the actual contract functions)
-            contractMetadata.abi = implAbi;
-            console.log('Using implementation ABI for write functions');
+            // Merge proxy ABI + implementation ABI (keep both sets of functions)
+            // Filter out duplicates based on function signature
+            const combinedAbi = [...contractMetadata.abi];
+            const existingSignatures = new Set(
+              contractMetadata.abi
+                .filter((item: any) => item.type === 'function')
+                .map((item: any) => {
+                  const inputs = item.inputs?.map((i: any) => i.type).join(',') || '';
+                  return `${item.name}(${inputs})`;
+                })
+            );
+            
+            // Add implementation functions that don't already exist in proxy ABI
+            for (const item of implAbi) {
+              if (item.type === 'function') {
+                const inputs = item.inputs?.map((i: any) => i.type).join(',') || '';
+                const signature = `${item.name}(${inputs})`;
+                if (!existingSignatures.has(signature)) {
+                  combinedAbi.push(item);
+                }
+              } else {
+                // Add non-function items (events, errors, etc.) without duplicate checking
+                combinedAbi.push(item);
+              }
+            }
+            
+            contractMetadata.abi = combinedAbi;
+            console.log(`✅ Merged ABIs: ${contractMetadata.abi.length} total items (proxy + implementation)`);
+          } else {
+            console.warn('⚠️ Implementation ABI fetch returned null - implementation might not be verified');
           }
         } catch (err) {
-          console.warn('Could not fetch implementation ABI, using proxy ABI:', err);
+          console.error('❌ Could not fetch implementation ABI, using proxy ABI only:', err);
         }
+      }
+      
+      // Update proxy info with final implementation address
+      if (implementationAddress) {
+        setProxyInfo({
+          isProxy: true,
+          implementation: implementationAddress,
+          proxyType: proxy.proxyType,
+        });
+      } else {
+        setProxyInfo(proxy);
       }
 
       setMetadata(contractMetadata);

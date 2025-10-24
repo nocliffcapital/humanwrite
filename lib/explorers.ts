@@ -158,7 +158,13 @@ async function fetchFromEtherscan(
       isProxy,
     };
 
-    console.log('Successfully fetched from Etherscan');
+    console.log('Successfully fetched from Etherscan:', {
+      contractName: sourceData.ContractName,
+      isProxy,
+      proxyFlag: sourceData.Proxy,
+      implementation: sourceData.Implementation,
+      abiItemCount: abi.length,
+    });
     return metadata;
   } catch (error) {
     console.error('Etherscan fetch error:', error);
@@ -197,9 +203,15 @@ export async function fetchImplementationAbi(
   chainId: number
 ): Promise<Abi | null> {
   try {
+    console.log(`Fetching implementation contract ABI at ${implementationAddress}`);
     const metadata = await fetchAbi(implementationAddress, chainId);
+    console.log(`Successfully fetched implementation ABI with ${metadata.abi.length} items`);
     return metadata.abi;
-  } catch {
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`Failed to fetch implementation ABI: ${errorMsg}`);
+    
+    // Don't throw, but return null so caller can decide to use proxy ABI as fallback
     return null;
   }
 }
