@@ -236,6 +236,15 @@ export async function fetchImplementationAbi(
     const response = await fetch(proxyUrl);
     const data = await response.json();
     
+    console.log('getabi response:', {
+      ok: response.ok,
+      status: data.status,
+      message: data.message,
+      resultType: typeof data.result,
+      resultLength: Array.isArray(data.result) ? data.result.length : 'N/A',
+      resultPreview: typeof data.result === 'string' ? data.result.substring(0, 100) : data.result
+    });
+    
     if (response.ok && data.status === '1' && data.result) {
       // getabi returns ABI as a JSON string (or sometimes already parsed)
       let abi: Abi;
