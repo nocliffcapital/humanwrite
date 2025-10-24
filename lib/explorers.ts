@@ -202,7 +202,7 @@ async function fetchFromEtherscan(
   }
 }
 
-// Fetch implementation ABI if proxy - use getsourcecode directly with special handling
+// Fetch implementation ABI if proxy - use getabi with v2 API and chainid
 export async function fetchImplementationAbi(
   implementationAddress: string,
   chainId: number
@@ -210,36 +210,56 @@ export async function fetchImplementationAbi(
   try {
     console.log(`Fetching implementation contract ABI at ${implementationAddress}`);
     
-    // Fetch using getsourcecode but mark this as an implementation request
-    // to avoid proxy auto-resolution
-    const metadata = await fetchAbi(implementationAddress, chainId);
+    const chain = getChainById(chainId);
+    if (!chain) {
+      throw new Error(`Unsupported chain ID: ${chainId}`);
+    }
     
-    console.log(`Fetched ABI for address ${implementationAddress}:`, {
-      contractName: metadata.name,
-      isProxy: metadata.isProxy,
-      abiLength: metadata.abi.length,
-      implementation: metadata.implementation
+    // Use getabi action (NOT getsourcecode) to bypass proxy auto-resolution
+    // Keep chainid parameter and use v2 API - let server inject API key
+    const abiParams = new URLSearchParams({
+      chainid: chainId.toString(),
+      module: 'contract',
+      action: 'getabi',
+      address: implementationAddress.toLowerCase(),
     });
     
-    // If we got proxy data back, the API is still auto-resolving
-    // Try to use the ABI anyway but warn
-    if (metadata.isProxy && metadata.implementation) {
-      console.warn(`⚠️ Implementation address ${implementationAddress} returned proxy data - API may be auto-resolving`);
+    const abiUrl = `${chain.explorerApiUrl}?${abiParams.toString()}`;
+    const proxyUrl = `/api/fetch-abi?url=${encodeURIComponent(abiUrl)}`;
+    
+    console.log(`Requesting getabi for implementation via: ${proxyUrl}`);
+    
+    const response = await fetch(proxyUrl);
+    const data = await response.json();
+    
+    console.log('getabi response for implementation:', {
+      ok: response.ok,
+      status: data.status,
+      message: data.message,
+      resultType: typeof data.result,
+      resultIsString: typeof data.result === 'string',
+      resultLength: typeof data.result === 'string' ? data.result.length : 'N/A',
+    });
+    
+    if (response.ok && data.status === '1' && data.result) {
+      // getabi should return ABI as a JSON string
+      let abi: Abi;
       
-      // If it has an implementation field, recursively fetch that
-      if (metadata.implementation && metadata.implementation !== implementationAddress.toLowerCase()) {
-        console.log(`Recursively fetching nested implementation: ${metadata.implementation}`);
-        return await fetchImplementationAbi(metadata.implementation, chainId);
+      if (typeof data.result === 'string') {
+        abi = JSON.parse(data.result);
+        console.log(`Successfully parsed implementation ABI with ${abi.length} items via getabi`);
+        return abi;
+      } else {
+        console.error('getabi returned non-string result:', data.result);
+        throw new Error('getabi returned unexpected format');
       }
     }
     
-    console.log(`Successfully fetched implementation ABI with ${metadata.abi.length} items`);
-    return metadata.abi;
+    console.warn('getabi failed, implementation ABI not available');
+    return null;
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : 'Unknown error';
     console.error(`Failed to fetch implementation ABI: ${errorMsg}`);
-    
-    // Don't throw, but return null so caller can decide to use proxy ABI as fallback
     return null;
   }
 }
