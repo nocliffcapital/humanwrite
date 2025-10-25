@@ -11,6 +11,7 @@ import { FunctionCard } from '@/components/FunctionCard';
 import { WalletButton } from '@/components/WalletButton';
 import { DocsModal } from '@/components/DocsModal';
 import { ApiKeySettings } from '@/components/ApiKeySettings';
+import { AIAssistant } from '@/components/AIAssistant';
 import { fetchAbi, fetchImplementationAbi, type ContractMetadata } from '@/lib/explorers';
 import { detectProxyFull, type ProxyInfo } from '@/lib/proxy';
 import { parseWriteFunctions } from '@/lib/abi';
@@ -255,6 +256,23 @@ export default function Home() {
     );
   });
 
+  // Handler for AI function selection
+  const handleAIFunctionSelect = (functionName: string, params: Record<string, string>) => {
+    // Find the function index
+    const funcIndex = writeFunctions.findIndex(f => f.name === functionName);
+    if (funcIndex !== -1) {
+      // Open the function card
+      setOpenFunctionIndex(funcIndex);
+      // Scroll to the function
+      setTimeout(() => {
+        const element = document.getElementById(`function-${funcIndex}`);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 100);
+    }
+  };
+
   const canLoad =
     contractInput.trim() &&
     (contractInput.startsWith('0x') || contractInput.endsWith('.eth'));
@@ -375,6 +393,16 @@ export default function Home() {
               proxyInfo={proxyInfo || undefined}
             />
 
+            {/* AI Assistant */}
+            {writeFunctions.length > 0 && (
+              <AIAssistant
+                availableFunctions={writeFunctions}
+                contractAddress={resolvedAddress}
+                contractName={metadata.name}
+                onFunctionSelect={handleAIFunctionSelect}
+              />
+            )}
+
             {/* Write Functions */}
             <div>
               <div className="mb-6">
@@ -417,25 +445,30 @@ export default function Home() {
               {writeFunctions.length > 0 ? (
                 filteredWriteFunctions.length > 0 ? (
                 <div className="space-y-4">
-                  {filteredWriteFunctions.map((func, idx) => (
-                    <div
-                      key={`${func.name}-${idx}`}
-                      className={`transition-opacity duration-200 ${
-                        openFunctionIndex !== null && openFunctionIndex !== idx
-                          ? 'opacity-40'
-                          : 'opacity-100'
-                      }`}
-                    >
-                      <FunctionCard
-                        func={func}
-                        contractAddress={resolvedAddress}
-                        abi={metadata.abi}
-                        chainId={selectedChainId}
-                        isOpen={openFunctionIndex === idx}
-                        onToggle={() => setOpenFunctionIndex(openFunctionIndex === idx ? null : idx)}
-                      />
-                    </div>
-                  ))}
+                  {filteredWriteFunctions.map((func, idx) => {
+                    // Find the original index in writeFunctions array
+                    const originalIdx = writeFunctions.findIndex(f => f.name === func.name && f.signature === func.signature);
+                    return (
+                      <div
+                        key={`${func.name}-${idx}`}
+                        id={`function-${originalIdx}`}
+                        className={`transition-opacity duration-200 ${
+                          openFunctionIndex !== null && openFunctionIndex !== originalIdx
+                            ? 'opacity-40'
+                            : 'opacity-100'
+                        }`}
+                      >
+                        <FunctionCard
+                          func={func}
+                          contractAddress={resolvedAddress}
+                          abi={metadata.abi}
+                          chainId={selectedChainId}
+                          isOpen={openFunctionIndex === originalIdx}
+                          onToggle={() => setOpenFunctionIndex(openFunctionIndex === originalIdx ? null : originalIdx)}
+                        />
+                      </div>
+                    );
+                  })}
                 </div>
                 ) : (
                   <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 rounded-xl border border-gray-700/50 p-12 text-center">

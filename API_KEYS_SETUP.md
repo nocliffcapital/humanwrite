@@ -42,6 +42,12 @@ All these APIs are **FREE** for basic usage:
 - Visit: https://snowtrace.io/myapikey
 - Add to `.env.local`: `SNOWTRACE_KEY=your_key_here`
 
+### OpenAI (for AI Assistant) - Optional
+- Visit: https://platform.openai.com/api-keys
+- Sign up and get your API key
+- Add to `.env.local`: `OPENAI_API_KEY=your_key_here`
+- **Note:** AI Assistant requires this to help select functions
+
 ## Example `.env.local` File
 
 ```bash
@@ -53,6 +59,9 @@ OPTIMISTIC_ETHERSCAN_KEY=ABC123XYZ789
 POLYGONSCAN_KEY=ABC123XYZ789
 BSCSCAN_KEY=ABC123XYZ789
 SNOWTRACE_KEY=ABC123XYZ789
+
+# OpenAI API Key (Optional - for AI Assistant feature)
+OPENAI_API_KEY=sk-proj-xxxxxxxxxxxxx
 ```
 
 **Tip:** Most of these explorers are run by the same company, so one API key often works across multiple chains! Try using your Etherscan key for all of them first.
