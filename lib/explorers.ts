@@ -1,6 +1,5 @@
 import type { Abi } from 'viem';
 import { getChainById, getExplorerApiKey, getApiKeyEnvName } from './chains';
-import { fetchFromSourcify } from './sourcify';
 
 export interface ContractMetadata {
   abi: Abi;
@@ -221,45 +220,7 @@ export async function fetchImplementationAbi(
       throw new Error(`Unsupported chain ID: ${chainId}`);
     }
     
-    // STRATEGY 1: Try Blockscout first (free, no API key, more reliable)
-    const blockscoutUrls: Record<number, string> = {
-      1: 'https://eth.blockscout.com/api',           // Ethereum
-      8453: 'https://base.blockscout.com/api',       // Base
-      10: 'https://optimism.blockscout.com/api',     // Optimism
-      42161: 'https://arbitrum.blockscout.com/api',  // Arbitrum
-      137: 'https://polygon.blockscout.com/api',     // Polygon
-    };
-    
-    const blockscoutUrl = blockscoutUrls[chainId];
-    if (blockscoutUrl) {
-      try {
-        console.log('Trying Blockscout for implementation ABI...');
-        const blockscoutParams = new URLSearchParams({
-          module: 'contract',
-          action: 'getabi',
-          address: implementationAddress.toLowerCase(),
-        });
-        
-        const fullUrl = `${blockscoutUrl}?${blockscoutParams.toString()}`;
-        const blockscoutProxy = `/api/fetch-abi?url=${encodeURIComponent(fullUrl)}`;
-        
-        const blockscoutResponse = await fetch(blockscoutProxy);
-        const blockscoutData = await blockscoutResponse.json();
-        
-        if (blockscoutResponse.ok && blockscoutData.status === '1' && blockscoutData.result) {
-          if (typeof blockscoutData.result === 'string') {
-            const abi: Abi = JSON.parse(blockscoutData.result);
-            console.log(`✅ Successfully fetched ${abi.length} items from Blockscout`);
-            return abi;
-          }
-        }
-        console.log('Blockscout failed, falling back to Etherscan');
-      } catch (blockscoutError) {
-        console.log('Blockscout error, falling back to Etherscan:', blockscoutError);
-      }
-    }
-    
-    // STRATEGY 2: Fall back to Etherscan
+    // Fetch from Etherscan using getabi action
     const abiParams = new URLSearchParams({
       chainid: chainId.toString(),
       module: 'contract',

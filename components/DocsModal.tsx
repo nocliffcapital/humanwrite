@@ -83,7 +83,7 @@ export function DocsModal({ isOpen, onClose }: DocsModalProps) {
                 <h4 className="font-semibold text-blue-400 mb-2">Multi-Chain Support</h4>
                 <p className="text-sm">
                   Supports 9 networks including Ethereum, Base, Arbitrum, Optimism, Polygon, BSC, 
-                  Avalanche, and their testnets. Works without API keys via Sourcify fallback.
+                  Avalanche, and their testnets. Requires explorer API keys for verification.
                 </p>
               </div>
 
@@ -118,26 +118,15 @@ export function DocsModal({ isOpen, onClose }: DocsModalProps) {
               Smart ABI Fetching
             </h3>
             <p className="leading-relaxed mb-3">
-              The app uses a <strong>multi-source fallback system</strong> to fetch contract ABIs, 
-              ensuring maximum availability without requiring API keys:
+              The app fetches contract ABIs from block explorers using a smart API key management system:
             </p>
             
-            {/* Fallback Strategy */}
+            {/* API Key Strategy */}
             <div className="bg-gradient-to-r from-green-900/30 to-blue-900/30 p-4 rounded-lg border border-green-500/30 mb-4">
-              <h4 className="font-semibold text-green-300 mb-3">Smart Fetch Strategy (Sourcify First!):</h4>
+              <h4 className="font-semibold text-green-300 mb-3">API Key Priority:</h4>
               <ol className="space-y-2 text-sm">
                 <li className="flex items-start gap-2">
-                  <span className="text-green-400 font-bold">1.</span>
-                  <div>
-                    <strong className="text-white">Sourcify</strong> (decentralized, IPFS-based)
-                    <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
-                      <CheckCircle2 className="h-3 w-3 text-green-400" />
-                      Free, no API key needed, great coverage
-                    </p>
-                  </div>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-blue-400 font-bold">2.</span>
+                  <span className="text-blue-400 font-bold">1.</span>
                   <div>
                     <strong className="text-white flex items-center gap-1">
                       Your API Key 
@@ -147,14 +136,17 @@ export function DocsModal({ isOpen, onClose }: DocsModalProps) {
                         Settings)
                       </span>
                     </strong>
-                    <p className="text-xs text-gray-400 mt-1">Unlimited requests, works when Sourcify doesn&apos;t have it</p>
+                    <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
+                      <CheckCircle2 className="h-3 w-3 text-green-400" />
+                      Unlimited requests, highest priority
+                    </p>
                   </div>
                 </li>
                 <li className="flex items-start gap-2">
-                  <span className="text-purple-400 font-bold">3.</span>
+                  <span className="text-purple-400 font-bold">2.</span>
                   <div>
-                    <strong className="text-white">Built-in API Key</strong> (server-side fallback)
-                    <p className="text-xs text-gray-400 mt-1">Shared rate limit, last resort</p>
+                    <strong className="text-white">Server-side API Key</strong> (secure fallback)
+                    <p className="text-xs text-gray-400 mt-1">Automatically used if no user key provided</p>
                   </div>
                 </li>
               </ol>
@@ -165,12 +157,12 @@ export function DocsModal({ isOpen, onClose }: DocsModalProps) {
               <h4 className="font-semibold text-white mb-2">Fetch Process:</h4>
               <ol className="space-y-2 text-sm">
                 <li>1. User enters contract address and selects network</li>
-                <li>2. <strong className="text-green-400">Tries Sourcify first</strong> (free, decentralized, no API key)</li>
-                <li>3. If Sourcify doesn&apos;t have it, tries Etherscan-family explorers</li>
-                <li>4. Uses your API key (if provided), then built-in key</li>
-                <li>5. Response includes ABI, contract name, verification status</li>
-                <li>6. Proxy detection checks EIP-1967/1822 slots</li>
-                <li>7. If proxy, fetches implementation ABI automatically</li>
+                <li>2. Fetches contract ABI from block explorer (Etherscan, Basescan, etc.)</li>
+                <li>3. Uses your API key (if provided), then server-side key</li>
+                <li>4. Response includes ABI, contract name, verification status</li>
+                <li>5. Proxy detection checks EIP-1967/1822 storage slots</li>
+                <li>6. If proxy detected, fetches implementation contract ABI</li>
+                <li>7. Merges proxy and implementation ABIs for complete functionality</li>
               </ol>
             </div>
 

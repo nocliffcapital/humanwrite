@@ -11,6 +11,216 @@ export interface AuditFinding {
   functionDetails?: Record<string, string>; // Function name -> signature/details
 }
 
+// Pattern configuration with context awareness
+interface PatternConfig {
+  patterns: string[];
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  severityIfInstitutional?: 'critical' | 'high' | 'medium' | 'low' | 'info';
+  category: string;
+  description: string;
+  recommendation: string;
+  recommendationIfInstitutional?: string;
+}
+
+const DANGEROUS_PATTERN_CONFIGS: PatternConfig[] = [
+  // ALWAYS CRITICAL - Destructive operations
+  {
+    patterns: ['selfdestruct', 'suicide', 'destroy', 'kill'],
+    severity: 'critical',
+    category: 'Destructive Operations',
+    description: 'This contract can be permanently destroyed, erasing all code and sending funds to an address.',
+    recommendation: '⚠️ EXTREME RISK: This function can permanently destroy the contract. Verify strict access controls and whether this is ever necessary.',
+  },
+  
+  // ALWAYS CRITICAL - Arbitrary code execution
+  {
+    patterns: ['delegatecall', 'callcode'],
+    severity: 'critical',
+    category: 'Arbitrary Code Execution',
+    description: 'This contract can execute arbitrary code from other contracts, which could bypass all security checks.',
+    recommendation: '⚠️ HIGH RISK: delegatecall can execute malicious code. Only safe if target address is immutable and trusted.',
+  },
+  
+  // Ownership & Access Control
+  {
+    patterns: [
+      'transferownership', 'setowner', 'addowner', 'removeowner', 
+      'changeowner', 'renounceownership', 'claimownership', 'acceptownership'
+    ],
+    severity: 'high',
+    severityIfInstitutional: 'info',
+    category: 'Ownership Controls',
+    description: 'This contract has ownership transfer functions. The owner likely has elevated privileges.',
+    recommendation: 'Verify the current owner address and understand what powers they have. Monitor for ownership changes.',
+    recommendationIfInstitutional: 'Standard ownership controls for regulated entities. Verify the owner is the legitimate issuing organization.',
+  },
+  
+  // Admin Functions
+  {
+    patterns: [
+      'setadmin', 'addadmin', 'removeadmin', 'grantadmin', 
+      'revokeadmin', 'setmoderator', 'setoperator'
+    ],
+    severity: 'high',
+    severityIfInstitutional: 'info',
+    category: 'Admin Controls',
+    description: 'This contract has administrator management functions. Admins likely have special privileges.',
+    recommendation: 'Verify who the current admins are and what powers they have. Multiple admins increase attack surface.',
+    recommendationIfInstitutional: 'Multi-admin setup is standard for institutional operations. Verify the admin addresses belong to the legitimate organization.',
+  },
+  
+  // Upgrade Mechanisms
+  {
+    patterns: [
+      'upgradeto', 'upgradetoandcall', 'setimplementation', 
+      'updateimplementation', 'changeimplementation', 'setbeacon', 'upgradebeacon'
+    ],
+    severity: 'high',
+    severityIfInstitutional: 'info',
+    category: 'Upgrade Mechanisms',
+    description: 'This contract is upgradeable. The implementation logic can be completely replaced.',
+    recommendation: '⚠️ The contract logic can change at any time. Monitor for upgrades and review new implementations before continuing to use.',
+    recommendationIfInstitutional: 'Upgradability is standard for institutional tokens to fix bugs and add features. Monitor official channels for upgrade announcements.',
+  },
+  
+  // Initialization (can be dangerous if re-callable)
+  {
+    patterns: ['initialize', 'reinitialize', 'setup', 'init', 'configure'],
+    severity: 'medium',
+    severityIfInstitutional: 'info',
+    category: 'Initialization',
+    description: 'This contract has initialization functions. If callable multiple times, it could reset critical state.',
+    recommendation: 'Verify that initialization is protected by the "initializer" modifier or can only be called once.',
+    recommendationIfInstitutional: 'Standard for proxy contracts. Initialization should be one-time only.',
+  },
+  
+  // Guardian/Emergency Controls
+  {
+    patterns: [
+      'setguardian', 'addguardian', 'removeguardian', 
+      'emergencywithdraw', 'emergencystop', 'emergencypause', 
+      'emergencyunpause', 'emergencyexit', 'shutdown', 'halt'
+    ],
+    severity: 'high',
+    severityIfInstitutional: 'info',
+    category: 'Emergency Controls',
+    description: 'This contract has emergency functions that can halt operations or withdraw funds.',
+    recommendation: 'Understand who can trigger emergencies and what they affect. Could be used to freeze your assets or halt operations.',
+    recommendationIfInstitutional: 'Emergency controls are required for regulatory compliance and user protection. Verify they\'re controlled by the legitimate entity.',
+  },
+  
+  // Pause/Freeze (context-dependent)
+  {
+    patterns: ['pause', 'unpause', 'freeze', 'unfreeze', 'setpauser', 'freezeaccount'],
+    severity: 'medium',
+    severityIfInstitutional: 'info',
+    category: 'Pause/Freeze Controls',
+    description: 'This contract can be paused or have accounts frozen, stopping transfers or operations.',
+    recommendation: 'Understand who can pause and what happens when paused. Your assets could be temporarily or permanently frozen.',
+    recommendationIfInstitutional: 'Pause/freeze controls are regulatory requirements for compliant stablecoins to prevent illicit activity and protect users.',
+  },
+  
+  // Treasury & Fund Management
+  {
+    patterns: [
+      'settreasury', 'setfeerecipient', 'setfeecollector',
+      'withdraw', 'withdrawfunds', 'withdrawtoken', 'withdraweth',
+      'rescue', 'rescuetokens', 'recovertoken', 'sweep', 'drain', 'skim'
+    ],
+    severity: 'medium',
+    category: 'Fund Controls',
+    description: 'This contract has functions to withdraw or redirect funds.',
+    recommendation: 'Verify these functions have proper access controls and understand who can withdraw what. Could be used to drain contract funds.',
+  },
+  
+  // Role Management (Access Control)
+  {
+    patterns: [
+      'grantrole', 'revokerole', 'setrole', 'addrole', 'removerole'
+    ],
+    severity: 'medium',
+    severityIfInstitutional: 'info',
+    category: 'Role Management',
+    description: 'This contract uses role-based access control. Roles can be granted or revoked.',
+    recommendation: 'Verify who has the DEFAULT_ADMIN_ROLE or equivalent. They can grant themselves any permission.',
+    recommendationIfInstitutional: 'Role-based access control is a security best practice for institutional contracts.',
+  },
+  
+  // Minting & Burning
+  {
+    patterns: ['mint', 'mintto', 'batchmint', 'burn', 'burnfrom'],
+    severity: 'medium',
+    severityIfInstitutional: 'info',
+    category: 'Supply Control',
+    description: 'This contract can mint new tokens or burn existing ones, affecting total supply.',
+    recommendation: 'Check who can mint and whether there are supply caps. Unlimited minting could devalue your holdings.',
+    recommendationIfInstitutional: 'Minting/burning is necessary for stablecoins to maintain their peg. Should be controlled by the legitimate issuer.',
+  },
+  
+  // Whitelist/Blacklist
+  {
+    patterns: [
+      'setwhitelist', 'addtowhitelist', 'removefromwhitelist',
+      'setblacklist', 'blacklist', 'unblacklist', 'addblacklist', 'removeblacklist'
+    ],
+    severity: 'medium',
+    severityIfInstitutional: 'info',
+    category: 'Access Lists',
+    description: 'This contract maintains whitelists or blacklists that can restrict who can interact with it.',
+    recommendation: 'Your address could be blacklisted, preventing you from transferring or accessing your tokens.',
+    recommendationIfInstitutional: 'Blacklisting is required for AML/KYC compliance and to prevent illicit use. This protects legitimate users.',
+  },
+  
+  // Parameter Changes (Fee manipulation, etc.)
+  {
+    patterns: [
+      'setfee', 'updatefee', 'setfeerate', 'setmaxfee',
+      'setlimit', 'setthreshold', 'setminimum', 'setmaximum',
+      'setrate', 'setprice', 'setslippage'
+    ],
+    severity: 'low',
+    category: 'Parameter Controls',
+    description: 'This contract allows changing operational parameters like fees, rates, or limits.',
+    recommendation: 'Parameters could be changed unfavorably (e.g., fees increased to 100%). Check if changes are time-locked or governance-controlled.',
+  },
+  
+  // Proxy & Delegation
+  {
+    patterns: ['setdelegate', 'setproxy', 'updateproxy'],
+    severity: 'high',
+    category: 'Delegation',
+    description: 'This contract can delegate calls to other addresses.',
+    recommendation: 'Delegation could be used to bypass access controls. Verify the delegate address is trusted and immutable.',
+  },
+  
+  // Oracle & Price Feeds
+  {
+    patterns: ['setoracle', 'updateoracle', 'setpricefeed', 'updateprice', 'setprice'],
+    severity: 'medium',
+    category: 'Oracle Controls',
+    description: 'This contract relies on oracles for price data, and the oracle address can be changed.',
+    recommendation: 'A malicious oracle could manipulate prices and drain funds. Verify the oracle is decentralized and trusted.',
+  },
+  
+  // Time-locks & Delays
+  {
+    patterns: ['setdelay', 'settimelock', 'executetimelock', 'canceltimelock'],
+    severity: 'low',
+    category: 'Timelock',
+    description: 'This contract has timelock functionality for delayed execution.',
+    recommendation: 'Timelocks are generally a positive security feature, giving users time to exit before changes take effect.',
+  },
+  
+  // Backend/Server Control
+  {
+    patterns: ['setbackend', 'setserver', 'setsigner', 'setvalidator', 'setrelayer'],
+    severity: 'medium',
+    category: 'Backend Controls',
+    description: 'This contract relies on off-chain components (backend, relayer, etc.) that can be changed.',
+    recommendation: 'Backend controls introduce centralization. Verify the backend operators are trustworthy.',
+  },
+];
+
 export interface AuditReport {
   score: number; // 0-100
   findings: AuditFinding[];
@@ -126,16 +336,14 @@ export function quickAuditABI(abi: Abi, contractName?: string): AuditFinding[] {
   // Detect contract context first
   const context = detectContractContext(abi, contractName);
 
-  // Track function categories to avoid duplicates
-  const dangerousFuncs: string[] = [];
-  const ownershipFuncs: string[] = [];
-  const upgradeFuncs: string[] = [];
-  const emergencyFuncs: string[] = [];
-  const withdrawalFuncs: string[] = [];
-  let hasTokenApproval = false;
+  // Track findings by category to consolidate them
+  const categoryMatches = new Map<string, {
+    config: PatternConfig;
+    functions: string[];
+    functionDetails: Record<string, string>;
+  }>();
   
-  // Store function details for tooltips
-  const functionDetails: Record<string, string> = {};
+  let hasTokenApproval = false;
 
   const abiItems = abi as any[];
   
@@ -151,139 +359,72 @@ export function quickAuditABI(abi: Abi, contractName?: string): AuditFinding[] {
     return `${item.name}(${params})`;
   };
   
-  // First pass: collect all matching functions
+  // Scan all functions against all pattern configs
   for (const item of abiItems) {
     if (item.type !== 'function') continue;
     
     const funcName = item.name?.toLowerCase() || '';
     const signature = getFunctionSignature(item);
     
-    // Check for self-destruct
-    if (['selfdestruct', 'suicide', 'delegatecall'].some(d => funcName.includes(d))) {
-      dangerousFuncs.push(item.name);
-      functionDetails[item.name] = signature;
-    }
-    
-    // Check for ownership transfer
-    if (funcName.includes('transferownership') || funcName.includes('setowner') || funcName.includes('renounceownership')) {
-      ownershipFuncs.push(item.name);
-      functionDetails[item.name] = signature;
-    }
-    
-    // Check for upgrade mechanisms (be specific to avoid false positives)
-    if (
-      funcName.includes('upgradeto') || 
-      funcName.includes('setimplementation') || 
-      funcName.includes('upgradeimplementation') ||
-      (funcName.includes('upgrade') && !funcName.includes('upgradeable')) // 'upgrade' but not 'upgradeable'
-    ) {
-      upgradeFuncs.push(item.name);
-      functionDetails[item.name] = signature;
-    }
-    
-    // Check for emergency functions (be specific to avoid catching view functions)
-    // Avoid catching 'unpause' (opposite of pause), 'pauser' (view), 'isPaused' (view)
-    if (
-      funcName === 'pause' || 
-      funcName === 'freeze' ||
-      funcName === 'emergency' ||
-      funcName.includes('blacklist') || 
-      funcName.includes('emergencystop') ||
-      funcName.includes('pausetrading') ||
-      funcName.includes('freezeaccount')
-    ) {
-      emergencyFuncs.push(item.name);
-      functionDetails[item.name] = signature;
-    }
-    
-    // Check for withdrawal functions
-    if (funcName.includes('withdraw') && item.stateMutability !== 'view' && item.stateMutability !== 'pure') {
-      const hasAddressParam = item.inputs?.some((i: any) => i.type === 'address');
-      if (hasAddressParam || funcName.includes('rescue') || funcName.includes('recover')) {
-        withdrawalFuncs.push(item.name);
-        functionDetails[item.name] = signature;
+    // Check against all pattern configs
+    for (const config of DANGEROUS_PATTERN_CONFIGS) {
+      // Check if function name matches any pattern
+      const matchesPattern = config.patterns.some(pattern => {
+        // Exact match or contains (for compound function names)
+        return funcName === pattern || funcName.includes(pattern);
+      });
+      
+      if (matchesPattern) {
+        // Add to category matches
+        if (!categoryMatches.has(config.category)) {
+          categoryMatches.set(config.category, {
+            config,
+            functions: [],
+            functionDetails: {},
+          });
+        }
+        
+        const match = categoryMatches.get(config.category)!;
+        match.functions.push(item.name);
+        match.functionDetails[item.name] = signature;
       }
     }
     
-    // Check for token approvals
+    // Check for token approvals (not in dangerous patterns, but useful info)
     if (funcName === 'approve' || funcName === 'increaseallowance') {
       hasTokenApproval = true;
     }
   }
   
-  // Second pass: create consolidated findings
-  if (dangerousFuncs.length > 0) {
+  // Convert category matches to findings
+  for (const [category, match] of categoryMatches) {
+    const { config, functions, functionDetails } = match;
+    
+    // Determine severity based on context
+    const severity = context.isInstitutional && config.severityIfInstitutional
+      ? config.severityIfInstitutional
+      : config.severity;
+    
+    // Determine recommendation based on context
+    const recommendation = context.isInstitutional && config.recommendationIfInstitutional
+      ? config.recommendationIfInstitutional
+      : config.recommendation;
+    
+    // Create consolidated finding
+    const funcList = functions.slice(0, 5).join(', ') + (functions.length > 5 ? ` +${functions.length - 5} more` : '');
+    
     findings.push({
-      severity: 'critical',
-      category: 'Dangerous Functions',
-      title: `Critical: ${dangerousFuncs.length} dangerous function${dangerousFuncs.length > 1 ? 's' : ''}`,
-      description: `This contract contains dangerous functions: ${dangerousFuncs.join(', ')}. These can permanently destroy the contract or execute arbitrary code.`,
-      recommendation: 'Verify that these functions have proper access controls and understand the implications before interacting.',
-      functions: dangerousFuncs,
+      severity,
+      category,
+      title: `${category} (${functions.length} function${functions.length > 1 ? 's' : ''})`,
+      description: `${config.description} Found: ${funcList}`,
+      recommendation,
+      functions,
       functionDetails,
     });
   }
   
-  if (ownershipFuncs.length > 0) {
-    findings.push({
-      severity: context.isInstitutional ? 'info' : 'high',
-      category: 'Ownership',
-      title: `Ownership controls (${ownershipFuncs.length} function${ownershipFuncs.length > 1 ? 's' : ''})`,
-      description: context.isInstitutional
-        ? `This contract has ownership controls: ${ownershipFuncs.slice(0, 3).join(', ')}${ownershipFuncs.length > 3 ? ` +${ownershipFuncs.length - 3} more` : ''}. For institutional stablecoins, this is expected and necessary for regulatory compliance.`
-        : `This contract has ownership functions: ${ownershipFuncs.slice(0, 3).join(', ')}${ownershipFuncs.length > 3 ? ` +${ownershipFuncs.length - 3} more` : ''}. The owner likely has elevated privileges.`,
-      recommendation: context.isInstitutional
-        ? 'This is normal for regulated stablecoins. Verify the owner is the legitimate issuing entity.'
-        : 'Verify the current owner and understand what powers they have.',
-      functions: ownershipFuncs,
-      functionDetails,
-    });
-  }
-  
-  if (upgradeFuncs.length > 0) {
-    findings.push({
-      severity: context.isInstitutional ? 'info' : 'high',
-      category: 'Upgradability',
-      title: `Upgradeable contract (${upgradeFuncs.length} function${upgradeFuncs.length > 1 ? 's' : ''})`,
-      description: context.isInstitutional
-        ? `This contract is upgradeable via: ${upgradeFuncs.slice(0, 3).join(', ')}${upgradeFuncs.length > 3 ? ` +${upgradeFuncs.length - 3} more` : ''}. For institutional tokens, this allows bug fixes and regulatory updates.`
-        : `This contract is upgradeable via: ${upgradeFuncs.slice(0, 3).join(', ')}${upgradeFuncs.length > 3 ? ` +${upgradeFuncs.length - 3} more` : ''}. The implementation can be changed by the owner.`,
-      recommendation: context.isInstitutional
-        ? 'Upgradability is standard for institutional tokens. Monitor announcements from the issuer for upgrade notifications.'
-        : 'This means the contract logic can change. Monitor for upgrades and review new implementations.',
-      functions: upgradeFuncs,
-      functionDetails,
-    });
-  }
-  
-  if (emergencyFuncs.length > 0) {
-    findings.push({
-      severity: context.isInstitutional ? 'info' : 'medium',
-      category: 'Emergency Controls',
-      title: context.isInstitutional ? `Emergency controls (${emergencyFuncs.length} function${emergencyFuncs.length > 1 ? 's' : ''})` : `Emergency controls (${emergencyFuncs.length} function${emergencyFuncs.length > 1 ? 's' : ''})`,
-      description: context.isInstitutional
-        ? `This contract has emergency controls: ${emergencyFuncs.slice(0, 3).join(', ')}${emergencyFuncs.length > 3 ? ` +${emergencyFuncs.length - 3} more` : ''}. These are regulatory requirements for compliant stablecoins to prevent illicit use.`
-        : `This contract has emergency mechanisms: ${emergencyFuncs.slice(0, 3).join(', ')}${emergencyFuncs.length > 3 ? ` +${emergencyFuncs.length - 3} more` : ''}. These can pause or restrict functionality.`,
-      recommendation: context.isInstitutional
-        ? 'These controls protect users from theft and meet AML/KYC requirements. This is expected for regulated tokens.'
-        : 'Understand who can trigger these and what they affect.',
-      functions: emergencyFuncs,
-      functionDetails,
-    });
-  }
-  
-  if (withdrawalFuncs.length > 0) {
-    findings.push({
-      severity: 'medium',
-      category: 'Fund Controls',
-      title: `Withdrawal functions (${withdrawalFuncs.length} function${withdrawalFuncs.length > 1 ? 's' : ''})`,
-      description: `This contract has fund withdrawal functions: ${withdrawalFuncs.slice(0, 3).join(', ')}${withdrawalFuncs.length > 3 ? ` +${withdrawalFuncs.length - 3} more` : ''}. Check access controls.`,
-      recommendation: 'Verify who can call these functions and under what conditions.',
-      functions: withdrawalFuncs,
-      functionDetails,
-    });
-  }
-  
+  // Add token approval info if relevant
   if (hasTokenApproval) {
     findings.push({
       severity: 'info',
@@ -303,15 +444,24 @@ export function quickAuditABI(abi: Abi, contractName?: string): AuditFinding[] {
   });
   
   // If no issues found (other than context), that's good!
-  if (findings.length === 1) {
+  if (findings.length === 1 || (findings.length === 2 && hasTokenApproval)) {
     findings.push({
       severity: 'info',
       category: 'Quick Scan',
-      title: 'No obvious red flags detected',
+      title: '✅ No obvious red flags detected',
       description: 'The quick scan did not detect common dangerous patterns in the ABI.',
       recommendation: 'This is a good sign, but consider running a full AI audit for comprehensive analysis.',
     });
   }
+  
+  // Sort findings by severity (critical -> high -> medium -> low -> info)
+  const severityOrder = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
+  findings.sort((a, b) => {
+    // Keep context first
+    if (a.category === 'Contract Type') return -1;
+    if (b.category === 'Contract Type') return 1;
+    return severityOrder[a.severity] - severityOrder[b.severity];
+  });
   
   return findings;
 }

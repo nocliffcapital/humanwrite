@@ -59,7 +59,6 @@ tx-translator/
 ### 2. Automatic ABI Fetching
 - Etherscan API (Ethereum, Base, Arbitrum, Optimism, Polygon, BSC, Sepolia)
 - SnowTrace API (Avalanche C-Chain, Fuji)
-- Blockscout fallback support
 - Proxy contract detection with implementation ABI fetching
 
 ### 3. Smart Contract Proxy Detection
