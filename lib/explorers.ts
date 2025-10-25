@@ -44,9 +44,9 @@ async function fetchFromEtherscan(
   chainId: number,
   chain: any
 ): Promise<ContractMetadata> {
-  // Try user's API key first, then built-in key
+  // Only use user's localStorage API key if they provided one
+  // Otherwise, let the server route inject its secure API key
   const userKey = getUserApiKey();
-  const apiKey = userKey || getExplorerApiKey(chainId);
   const params = new URLSearchParams({
     chainid: chainId.toString(),
     module: 'contract',
@@ -54,8 +54,13 @@ async function fetchFromEtherscan(
     address: address.toLowerCase(),
   });
 
-  if (apiKey) {
-    params.append('apikey', apiKey);
+  // Only add API key if user explicitly provided one via localStorage
+  // Server will inject its own key if none is present
+  if (userKey) {
+    params.append('apikey', userKey);
+    console.log('Using user-provided API key from localStorage');
+  } else {
+    console.log('No user API key - server will inject its own');
   }
 
   const explorerUrl = `${chain.explorerApiUrl}?${params.toString()}`;
@@ -111,8 +116,9 @@ async function fetchFromEtherscan(
         address: address.toLowerCase(),
         tag: 'latest',
       });
-      if (apiKey) {
-        codeParams.append('apikey', apiKey);
+      // Only add user key if provided, server will inject its own otherwise
+      if (userKey) {
+        codeParams.append('apikey', userKey);
       }
       const explorerCodeUrl = `${chain.explorerApiUrl}?${codeParams.toString()}`;
       const codeUrl = `/api/fetch-abi?url=${encodeURIComponent(explorerCodeUrl)}`;

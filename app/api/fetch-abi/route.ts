@@ -40,11 +40,15 @@ export async function GET(request: NextRequest) {
     // Get API key server-side (secure!)
     const apiKey = getExplorerApiKey(chainId);
     
-    if (apiKey && !urlObj.searchParams.has('apikey')) {
+    if (urlObj.searchParams.has('apikey')) {
+      console.log(`[API Route] Using user-provided API key for chain ${chainId}`);
+    } else if (apiKey) {
       // Inject API key server-side
       urlObj.searchParams.set('apikey', apiKey);
       url = urlObj.toString();
       console.log(`[API Route] Injected server-side API key for chain ${chainId}`);
+    } else {
+      console.warn(`[API Route] No API key available for chain ${chainId}`);
     }
 
     // Fetch from the explorer API server-side (no CORS issues)
