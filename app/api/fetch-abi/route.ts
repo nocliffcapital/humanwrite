@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getExplorerApiKey } from '@/lib/chains';
 
+// Force Node.js runtime for Netlify (not Edge)
+export const runtime = 'nodejs';
+// Increase timeout for Netlify (max 26s on paid, 10s on free)
+export const maxDuration = 10;
+
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   let url = searchParams.get('url');
@@ -87,7 +92,28 @@ export async function GET(request: NextRequest) {
     }
 
     const data = await response.json();
-    
+
+    // Log response details for debugging Netlify vs localhost differences
+    const dataString = JSON.stringify(data);
+    const dataSizeKB = (dataString.length / 1024).toFixed(2);
+    console.log(`[API Route] Response size: ${dataSizeKB} KB`);
+
+    // Check if response is too large (Netlify has 6MB limit)
+    if (dataString.length > 5 * 1024 * 1024) {
+      console.warn(`[API Route] Large response (${dataSizeKB} KB) - may hit Netlify limits`);
+    }
+
+    // Log result details for debugging
+    if (data.result) {
+      if (typeof data.result === 'string') {
+        console.log(`[API Route] Result is string, length: ${data.result.length}`);
+      } else if (Array.isArray(data.result)) {
+        console.log(`[API Route] Result is array, length: ${data.result.length}`);
+      } else {
+        console.log(`[API Route] Result is object with keys: ${Object.keys(data.result).join(', ')}`);
+      }
+    }
+
     // Return the data with proper headers
     return NextResponse.json(data, {
       headers: {

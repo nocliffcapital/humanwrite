@@ -178,8 +178,24 @@ export default function Home() {
       if ((proxy.isProxy || contractMetadata.isProxy) && implementationAddress) {
         try {
           console.log(`🔍 Proxy detected (${proxy.proxyType || 'via Explorer'}) - fetching implementation ABI from ${implementationAddress}`);
+
+          // Count functions before merging
+          const proxyFunctionCount = contractMetadata.abi.filter((i: any) => i.type === 'function').length;
+          const proxyWriteCount = contractMetadata.abi.filter((i: any) =>
+            i.type === 'function' &&
+            (i.stateMutability === 'nonpayable' || i.stateMutability === 'payable')
+          ).length;
+          console.log(`[ABI Merge] Proxy ABI has ${contractMetadata.abi.length} items, ${proxyFunctionCount} functions, ${proxyWriteCount} write functions`);
+
           const implAbi = await fetchImplementationAbi(implementationAddress, selectedChainId);
           if (implAbi) {
+            const implFunctionCount = implAbi.filter((i: any) => i.type === 'function').length;
+            const implWriteCount = implAbi.filter((i: any) =>
+              i.type === 'function' &&
+              (i.stateMutability === 'nonpayable' || i.stateMutability === 'payable')
+            ).length;
+            console.log(`[ABI Merge] Implementation ABI has ${implAbi.length} items, ${implFunctionCount} functions, ${implWriteCount} write functions`);
+
             // Merge proxy ABI + implementation ABI (keep both sets of functions)
             // Filter out duplicates based on function signature
             const combinedAbi = [...contractMetadata.abi];
@@ -191,7 +207,10 @@ export default function Home() {
                   return `${item.name}(${inputs})`;
                 })
             );
-            
+
+            let addedFunctions = 0;
+            let addedOther = 0;
+
             // Add implementation functions that don't already exist in proxy ABI
             for (const item of implAbi) {
               if (item.type === 'function') {
@@ -199,20 +218,30 @@ export default function Home() {
                 const signature = `${item.name}(${inputs})`;
                 if (!existingSignatures.has(signature)) {
                   combinedAbi.push(item);
+                  addedFunctions++;
                 }
               } else {
                 // Add non-function items (events, errors, etc.) without duplicate checking
                 combinedAbi.push(item);
+                addedOther++;
               }
             }
-            
+
             contractMetadata.abi = combinedAbi;
-            console.log(`✅ Merged ABIs: ${contractMetadata.abi.length} total items (proxy + implementation)`);
+
+            const finalFunctionCount = combinedAbi.filter((i: any) => i.type === 'function').length;
+            const finalWriteCount = combinedAbi.filter((i: any) =>
+              i.type === 'function' &&
+              (i.stateMutability === 'nonpayable' || i.stateMutability === 'payable')
+            ).length;
+
+            console.log(`[ABI Merge] ✅ Merged ABIs: ${combinedAbi.length} total items, ${finalFunctionCount} functions, ${finalWriteCount} write functions`);
+            console.log(`[ABI Merge] Added ${addedFunctions} new functions + ${addedOther} other items from implementation`);
           } else {
-            console.warn('⚠️ Implementation ABI fetch returned null - implementation might not be verified');
+            console.warn('[ABI Merge] ⚠️ Implementation ABI fetch returned null - implementation might not be verified');
           }
         } catch (err) {
-          console.error('❌ Could not fetch implementation ABI, using proxy ABI only:', err);
+          console.error('[ABI Merge] ❌ Could not fetch implementation ABI, using proxy ABI only:', err);
         }
       }
       

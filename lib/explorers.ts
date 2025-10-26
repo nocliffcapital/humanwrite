@@ -137,11 +137,15 @@ async function fetchFromEtherscan(
 
     const abi: Abi = JSON.parse(sourceData.ABI);
 
+    // Log ABI string length before parsing for debugging
+    console.log(`[fetchAbi] ABI string length: ${sourceData.ABI.length} chars`);
+    console.log(`[fetchAbi] Parsed ABI has ${abi.length} total items`);
+
     // Check if it's a proxy
-    const isProxy = sourceData.Proxy === '1' || 
+    const isProxy = sourceData.Proxy === '1' ||
                     sourceData.Implementation !== '' ||
-                    abi.some((item: any) => 
-                      item.type === 'function' && 
+                    abi.some((item: any) =>
+                      item.type === 'function' &&
                       (item.name === 'implementation' || item.name === 'upgradeTo')
                     );
 
@@ -157,23 +161,24 @@ async function fetchFromEtherscan(
     const functionCounts = {
       total: abi.length,
       functions: abi.filter((i: any) => i.type === 'function').length,
-      writeFunctions: abi.filter((i: any) => 
-        i.type === 'function' && 
+      writeFunctions: abi.filter((i: any) =>
+        i.type === 'function' &&
         (i.stateMutability === 'nonpayable' || i.stateMutability === 'payable')
       ).length,
-      readFunctions: abi.filter((i: any) => 
-        i.type === 'function' && 
+      readFunctions: abi.filter((i: any) =>
+        i.type === 'function' &&
         (i.stateMutability === 'view' || i.stateMutability === 'pure')
       ).length,
       events: abi.filter((i: any) => i.type === 'event').length,
     };
 
-    console.log('Successfully fetched from Etherscan:', {
+    console.log('[fetchAbi] Successfully fetched from Etherscan:', {
       contractName: sourceData.ContractName,
       isProxy,
       proxyFlag: sourceData.Proxy,
       implementation: sourceData.Implementation,
       functionCounts,
+      abiStringLength: sourceData.ABI.length,
     });
     return metadata;
   } catch (error) {
@@ -248,31 +253,46 @@ export async function fetchImplementationAbi(
     if (response.ok && data.status === '1' && data.result) {
       // getabi should return ABI as a JSON string, but sometimes returns getsourcecode format
       let abi: Abi;
-      
+
       if (typeof data.result === 'string') {
         // Standard format: ABI as JSON string
+        console.log(`[fetchImplementationAbi] Result is string, length: ${data.result.length} chars`);
         abi = JSON.parse(data.result);
-        console.log(`Successfully parsed implementation ABI with ${abi.length} items via getabi (string format)`);
+
+        const functionCount = abi.filter((i: any) => i.type === 'function').length;
+        const writeCount = abi.filter((i: any) =>
+          i.type === 'function' &&
+          (i.stateMutability === 'nonpayable' || i.stateMutability === 'payable')
+        ).length;
+
+        console.log(`[fetchImplementationAbi] Successfully parsed implementation ABI: ${abi.length} items, ${functionCount} functions, ${writeCount} write functions (string format)`);
         return abi;
       } else if (Array.isArray(data.result) && data.result[0]?.ABI) {
         // Some API versions return getsourcecode format
         const contractData = data.result[0];
-        console.log(`getabi returned getsourcecode format. Contract: ${contractData.ContractName}, Proxy: ${contractData.Proxy}`);
-        
+        console.log(`[fetchImplementationAbi] getabi returned getsourcecode format. Contract: ${contractData.ContractName}, Proxy: ${contractData.Proxy}`);
+
         // Check if we got proxy data back (API auto-resolution bug)
         if (contractData.Proxy === '1' || contractData.ContractName === 'FiatTokenProxy') {
-          console.error(`❌ getabi returned PROXY data instead of implementation! ContractName: ${contractData.ContractName}`);
+          console.error(`[fetchImplementationAbi] ❌ getabi returned PROXY data instead of implementation! ContractName: ${contractData.ContractName}`);
           // This is the Etherscan bug - it's returning proxy data for implementation address
           // We can't use this, return null
           return null;
         }
-        
+
         // Extract ABI from the object
         abi = JSON.parse(contractData.ABI);
-        console.log(`Successfully parsed implementation ABI with ${abi.length} items via getabi (object format)`);
+
+        const functionCount = abi.filter((i: any) => i.type === 'function').length;
+        const writeCount = abi.filter((i: any) =>
+          i.type === 'function' &&
+          (i.stateMutability === 'nonpayable' || i.stateMutability === 'payable')
+        ).length;
+
+        console.log(`[fetchImplementationAbi] Successfully parsed implementation ABI: ${abi.length} items, ${functionCount} functions, ${writeCount} write functions (object format)`);
         return abi;
       } else {
-        console.error('getabi returned unexpected format:', data.result);
+        console.error('[fetchImplementationAbi] getabi returned unexpected format:', data.result);
         throw new Error('getabi returned unexpected format');
       }
     }
