@@ -245,6 +245,7 @@ export async function fetchImplementationAbi(
     const proxyUrl = `/api/fetch-abi?url=${encodeURIComponent(explorerUrl)}`;
 
     console.log(`[fetchImplementationAbi] Requesting getsourcecode for implementation via Etherscan`);
+    console.log(`[fetchImplementationAbi] Implementation address: ${implementationAddress}`);
 
     const response = await fetch(proxyUrl);
     const data = await response.json();
@@ -254,6 +255,7 @@ export async function fetchImplementationAbi(
       status: data.status,
       message: data.message,
       resultType: typeof data.result,
+      requestedAddress: implementationAddress.toLowerCase(),
     });
 
     if (!response.ok || data.error) {
@@ -277,10 +279,19 @@ export async function fetchImplementationAbi(
       sourceData = data.result;
     }
 
+    // Log what contract data we received
+    console.log(`[fetchImplementationAbi] Received contract data:`, {
+      contractName: sourceData.ContractName,
+      isProxy: sourceData.Proxy,
+      hasABI: !!sourceData.ABI,
+      abiLength: sourceData.ABI ? sourceData.ABI.length : 0,
+    });
+
     // Verify we got the IMPLEMENTATION, not the proxy
     if (sourceData.Proxy === '1') {
       console.error(`[fetchImplementationAbi] ❌ API BUG: getsourcecode returned PROXY data (${sourceData.ContractName}) when requesting implementation at ${implementationAddress}`);
-      console.error(`[fetchImplementationAbi] This is an Etherscan API bug. Implementation address may not be verified.`);
+      console.error(`[fetchImplementationAbi] This is an Etherscan API bug that affects some contracts.`);
+      console.error(`[fetchImplementationAbi] The implementation contract may not be verified, or Etherscan is auto-resolving the address.`);
       return null;
     }
 
