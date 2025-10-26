@@ -212,96 +212,105 @@ async function fetchFromEtherscan(
   }
 }
 
-// Fetch implementation ABI if proxy - try Blockscout first (no API key, no bugs!)
+// Fetch implementation ABI if proxy
+// NOTE: We use getsourcecode instead of getabi to avoid Etherscan's proxy auto-resolution bug
 export async function fetchImplementationAbi(
   implementationAddress: string,
   chainId: number
 ): Promise<Abi | null> {
   try {
-    console.log(`Fetching implementation contract ABI at ${implementationAddress}`);
-    
+    console.log(`[fetchImplementationAbi] Fetching implementation contract ABI at ${implementationAddress}`);
+
     const chain = getChainById(chainId);
     if (!chain) {
       throw new Error(`Unsupported chain ID: ${chainId}`);
     }
-    
-    // Fetch from Etherscan using getabi action
-    const abiParams = new URLSearchParams({
+
+    // Use getsourcecode instead of getabi to avoid Etherscan's proxy auto-resolution bug
+    // getabi sometimes returns the proxy ABI even when requesting the implementation address
+    const userKey = getUserApiKey();
+    const params = new URLSearchParams({
       chainid: chainId.toString(),
       module: 'contract',
-      action: 'getabi',
+      action: 'getsourcecode',
       address: implementationAddress.toLowerCase(),
     });
-    
-    const abiUrl = `${chain.explorerApiUrl}?${abiParams.toString()}`;
-    const proxyUrl = `/api/fetch-abi?url=${encodeURIComponent(abiUrl)}`;
-    
-    console.log(`Requesting getabi for implementation via Etherscan`);
-    
+
+    // Only add user key if provided, server will inject its own otherwise
+    if (userKey) {
+      params.append('apikey', userKey);
+    }
+
+    const explorerUrl = `${chain.explorerApiUrl}?${params.toString()}`;
+    const proxyUrl = `/api/fetch-abi?url=${encodeURIComponent(explorerUrl)}`;
+
+    console.log(`[fetchImplementationAbi] Requesting getsourcecode for implementation via Etherscan`);
+
     const response = await fetch(proxyUrl);
     const data = await response.json();
-    
-    console.log('getabi response for implementation:', {
+
+    console.log('[fetchImplementationAbi] getsourcecode response:', {
       ok: response.ok,
       status: data.status,
       message: data.message,
       resultType: typeof data.result,
-      resultIsString: typeof data.result === 'string',
-      resultLength: typeof data.result === 'string' ? data.result.length : 'N/A',
     });
-    
-    if (response.ok && data.status === '1' && data.result) {
-      // getabi should return ABI as a JSON string, but sometimes returns getsourcecode format
-      let abi: Abi;
 
-      if (typeof data.result === 'string') {
-        // Standard format: ABI as JSON string
-        console.log(`[fetchImplementationAbi] Result is string, length: ${data.result.length} chars`);
-        abi = JSON.parse(data.result);
-
-        const functionCount = abi.filter((i: any) => i.type === 'function').length;
-        const writeCount = abi.filter((i: any) =>
-          i.type === 'function' &&
-          (i.stateMutability === 'nonpayable' || i.stateMutability === 'payable')
-        ).length;
-
-        console.log(`[fetchImplementationAbi] Successfully parsed implementation ABI: ${abi.length} items, ${functionCount} functions, ${writeCount} write functions (string format)`);
-        return abi;
-      } else if (Array.isArray(data.result) && data.result[0]?.ABI) {
-        // Some API versions return getsourcecode format
-        const contractData = data.result[0];
-        console.log(`[fetchImplementationAbi] getabi returned getsourcecode format. Contract: ${contractData.ContractName}, Proxy: ${contractData.Proxy}`);
-
-        // Check if we got proxy data back (API auto-resolution bug)
-        if (contractData.Proxy === '1' || contractData.ContractName === 'FiatTokenProxy') {
-          console.error(`[fetchImplementationAbi] ❌ getabi returned PROXY data instead of implementation! ContractName: ${contractData.ContractName}`);
-          // This is the Etherscan bug - it's returning proxy data for implementation address
-          // We can't use this, return null
-          return null;
-        }
-
-        // Extract ABI from the object
-        abi = JSON.parse(contractData.ABI);
-
-        const functionCount = abi.filter((i: any) => i.type === 'function').length;
-        const writeCount = abi.filter((i: any) =>
-          i.type === 'function' &&
-          (i.stateMutability === 'nonpayable' || i.stateMutability === 'payable')
-        ).length;
-
-        console.log(`[fetchImplementationAbi] Successfully parsed implementation ABI: ${abi.length} items, ${functionCount} functions, ${writeCount} write functions (object format)`);
-        return abi;
-      } else {
-        console.error('[fetchImplementationAbi] getabi returned unexpected format:', data.result);
-        throw new Error('getabi returned unexpected format');
-      }
+    if (!response.ok || data.error) {
+      console.error('[fetchImplementationAbi] Request failed:', data.error || 'Unknown error');
+      return null;
     }
-    
-    console.warn('getabi failed, implementation ABI not available');
-    return null;
+
+    if (data.status !== '1') {
+      console.warn('[fetchImplementationAbi] API returned status:', data.status, data.message);
+      return null;
+    }
+
+    // Parse result (can be string or array)
+    let sourceData;
+    if (typeof data.result === 'string') {
+      const parsed = JSON.parse(data.result);
+      sourceData = Array.isArray(parsed) ? parsed[0] : parsed;
+    } else if (Array.isArray(data.result)) {
+      sourceData = data.result[0];
+    } else {
+      sourceData = data.result;
+    }
+
+    // Verify we got the IMPLEMENTATION, not the proxy
+    if (sourceData.Proxy === '1') {
+      console.error(`[fetchImplementationAbi] ❌ API BUG: getsourcecode returned PROXY data (${sourceData.ContractName}) when requesting implementation at ${implementationAddress}`);
+      console.error(`[fetchImplementationAbi] This is an Etherscan API bug. Implementation address may not be verified.`);
+      return null;
+    }
+
+    // Check if implementation is verified
+    if (!sourceData.ABI || sourceData.ABI === 'Contract source code not verified') {
+      console.warn('[fetchImplementationAbi] Implementation contract is not verified');
+      return null;
+    }
+
+    // Parse the ABI
+    const abi: Abi = JSON.parse(sourceData.ABI);
+
+    const functionCount = abi.filter((i: any) => i.type === 'function').length;
+    const writeCount = abi.filter((i: any) =>
+      i.type === 'function' &&
+      (i.stateMutability === 'nonpayable' || i.stateMutability === 'payable')
+    ).length;
+
+    console.log(`[fetchImplementationAbi] ✅ Successfully fetched implementation ABI:`, {
+      contractName: sourceData.ContractName,
+      totalItems: abi.length,
+      functions: functionCount,
+      writeFunctions: writeCount,
+      isProxy: sourceData.Proxy,
+    });
+
+    return abi;
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-    console.error(`Failed to fetch implementation ABI: ${errorMsg}`);
+    console.error(`[fetchImplementationAbi] Failed to fetch implementation ABI: ${errorMsg}`);
     return null;
   }
 }
